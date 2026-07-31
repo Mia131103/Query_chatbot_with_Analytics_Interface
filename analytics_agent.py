@@ -7,6 +7,7 @@ from dotenv import load_dotenv, find_dotenv
 from langgraph.checkpoint.sqlite import SqliteSaver
 from pydantic import BaseModel
 import pandas as pd
+from visualisations import build_chart
 
 load_dotenv(find_dotenv())
 
@@ -27,6 +28,12 @@ class ChartSpecs(BaseModel):
 
 class ChartList(BaseModel):
     charts: list[ChartSpecs]
+
+class Analytics_result(TypedDict):
+    title: str
+    figure: Any
+    description: str
+
 
 # === PROMPTS FOR THE LLM NODES ===
 
@@ -88,7 +95,7 @@ builder.add_edge("Generate_Insights", END)
 
 model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
-def run_analytics(result: dict) -> dict:
+def run_analytics(result: dict) -> list[dict]:
 
     with SqliteSaver.from_conn_string(":memory:") as memory:
 
@@ -103,7 +110,14 @@ def run_analytics(result: dict) -> dict:
             "descriptions": []
         }
         final_state = graph.invoke(state, thread)
-        return final_state
-
+        charts = final_state['chart_specs']
+        analytics: list[Analytics_result] = []
+        for c, fig, desc in zip(charts, final_state['figures'], final_state['descriptions']):
+            analytics.append({
+                "title": c.title,
+                "figure": fig,
+                "description": desc
+            })
+        return analytics
 
 
