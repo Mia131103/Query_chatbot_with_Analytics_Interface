@@ -22,18 +22,25 @@ with sql_tab:
             placeholder="Example: Show average salary by department"
         )
     generate = st.button("Generate SQL")
-    
-    if generate:
-        with st.spinner("Generating SQL..."):
-            result = run_agent(question)
 
+with analytics_tab:
+    st.write("Analytics Page")
+            
+    st.header("Analytics")
+    st.info("Run a SQL query first.")
+    
+if generate:
+    with st.spinner("Generating SQL..."):
+        result = run_agent(question)
+        df = pd.DataFrame(result["data"])
+
+        with sql_tab:
             st.subheader("Generated SQL")
             st.code(
                 result["sql"],
                 language = "sql"
             )
 
-            df = pd.DataFrame(result["data"])
             st.subheader("Results")
             st.dataframe(df, use_container_width=True)
 
@@ -43,21 +50,18 @@ with sql_tab:
                 st.error(result["llm_critique"])
     
 
-with analytics_tab:
-    st.write("Analytics Page")
-    
-    st.header("Analytics")
-    st.info("Run a SQL query first.")
+        with analytics_tab:
 
-    if question == "":
-        charts = default_analytics()
-    else:
-        charts = run_analytics(result)
+            #    if question == "":
+            #       charts = default_analytics()
+            #   else:
+            #       charts = run_analytics(result)
+            charts = run_analytics(result)
 
-    for chart in charts:
-        st.subheader(chart['title'])
-        st.plotly_chart(chart['figure'], use_container_width=True)
-        st.write(chart['description'])
+            for chart in charts:
+                st.subheader(chart['title'])
+                st.plotly_chart(chart['figure'], use_container_width=True)
+                st.write(chart['description'])
 
 
 
