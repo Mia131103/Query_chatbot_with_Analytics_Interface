@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 from SQL_generator import run_agent
+from visualisations import default_analytics
+from analytics_agent import run_analytics
 
 st.set_page_config(
     page_title="SQL Analytics Agent",
@@ -46,6 +48,17 @@ with analytics_tab:
     
     st.header("Analytics")
     st.info("Run a SQL query first.")
+
+    if question == "":
+        charts = default_analytics()
+    else:
+        charts = run_analytics(result)
+
+    for chart in charts:
+        st.subheader(chart['title'])
+        st.plotly_chart(chart['figure'], use_container_width=True)
+        st.write(chart['description'])
+
 
 
 
