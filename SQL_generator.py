@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv, find_dotenv 
 from langgraph.checkpoint.sqlite import SqliteSaver
 from pydantic import BaseModel
-from database import get_schema, db
+from database import get_schema, db, data_dictionary
 
 #Loading env and making our tool
 load_dotenv(find_dotenv())
@@ -28,8 +28,9 @@ class SQLCheck(BaseModel):
 # === PROMPT FOR EACH LLM NODE ===
 
 #SQL generating node
-SQL_generation_prompt = """You are an expert SQL generating assistant. Use the database \
-Schema provided in {schema} and the user question and generate SQL accordingly. \
+SQL_generation_prompt = """You are an expert SQL generating assistant.\
+You are given the database schema provided in {schema}, the data dictionary provided in {data_dictionary} for more information on the schema and relations, and the user question. \
+Generate SQL for the user question. \
 ONLY generate SELECT statements. \
 
 Return ONLY executable SQL.
@@ -43,7 +44,7 @@ You are an SQL debugger. \
 
 Check the given SQL generated for the given user question for logical and syntax errors. \
 Make sure it is a SELECT statement, not INSERT, DELETE, UPDATE etc \
-Use the {schema} to check for these errors. \
+Use the {schema} and the {data_dictionary} to check for these errors. \
 
 Do not pick errors over efficiency or be nitpicky. \
 Only give error when it will definitely cause the query to fail or \
@@ -53,9 +54,10 @@ Response should be generated according to the provided structured output.\
 """
 
 #SQL generation on error
-SQL_generation_error_prompt = """You are an expert SQL generator. You will use the user question,\
-the SQL generated against that question, and the error in that code. Fix the problem in the SQL \
-according to the error given and generate the new SQL code. Use the {schema} to understand the database.\
+SQL_generation_error_prompt = """You are an expert SQL generator. \
+You are given the user question, the SQL generated against that question, and the error in that code. \
+Fix the problem in the SQL according to the error given and generate the new SQL code. \
+Use the {schema} and the {data_dictionary} to understand the database.\
 ONLY generate SELECT statements. \
 
 Return ONLY corrected executable SQL.
@@ -68,7 +70,7 @@ Do not include ```sql. """
 #SQL Gneration node
 def SQL_generation_node(state: AgentState):
     messages = [
-        SystemMessage(content=SQL_generation_prompt.format(schema=schema)),
+        SystemMessage(content=SQL_generation_prompt.format(schema=schema, data_dictionary=data_dictionary)),
         HumanMessage(content=state['user'])
     ]
     response = model.invoke(messages)
@@ -80,7 +82,7 @@ def llm_verification_node(state: AgentState):
         content=f"User Question: {state['user']}\nSQL generated: {state['sql']}"
     )
     messages = [
-        SystemMessage(content=llm_verification_prompt.format(schema=schema)),
+        SystemMessage(content=llm_verification_prompt.format(schema=schema, data_dictionary=data_dictionary)),
         UserMessage
     ]
     response = model.with_structured_output(SQLCheck).invoke(messages)
@@ -105,7 +107,7 @@ def SQL_regeneration_node(state: AgentState):
         content=f"User Question: {state['user']}\n\nGenerated SQL: {state['sql']}\n\nError: {error}"
     )
     messages = [
-        SystemMessage(content=SQL_generation_error_prompt.format(schema=schema)),
+        SystemMessage(content=SQL_generation_error_prompt.format(schema=schema, data_dictionary=data_dictionary)),
         UserMessage
     ]
     response = model.invoke(messages)
