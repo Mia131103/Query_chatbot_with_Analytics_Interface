@@ -31,8 +31,3 @@ def build_chart(df: pd.DataFrame, spec: ChartSpecs):
     else: 
         raise ValueError(f"Unsupported chart type: {spec.type}")
     return figure
-
-def default_analytics(df: pd.DataFrame):
-    analytics: list[Analytics_result] = []
-
-    return analytics
