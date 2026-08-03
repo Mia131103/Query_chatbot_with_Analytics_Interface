@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from SQL_generator import run_agent
-from visualisations import default_analytics
 from analytics_agent import run_analytics
 
 st.set_page_config(
@@ -18,8 +17,7 @@ with sql_tab:
     st.write("SQL Query Page")
 
     question = st.text_area(
-            "Ask your question",
-            placeholder="Example: Show average salary by department"
+            "Ask your question"
         )
     generate = st.button("Generate SQL")
 
@@ -48,19 +46,14 @@ if generate:
                 st.error(result["execute_error"])
             if result["llm_critique"]:
                 st.error(result["llm_critique"])
-    
 
         with analytics_tab:
-
-            #    if question == "":
-            #       charts = default_analytics()
-            #   else:
-            #       charts = run_analytics(result)
             charts = run_analytics(result)
 
             for chart in charts:
                 st.subheader(chart['title'])
-                st.plotly_chart(chart['figure'], use_container_width=True)
+                if chart["figure"] is not None:
+                    st.plotly_chart(chart['figure'], width="stretch")
                 st.write(chart['description'])
 
 

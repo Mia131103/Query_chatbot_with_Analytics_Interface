@@ -111,6 +111,13 @@ model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 def run_analytics(result: dict) -> list[dict]:
 
+    if result['data'] == []:
+        return [{
+            "title": "No Results.",
+            "figure": None,
+            "description": "The query generated no rows. Analytics cannot be generated."
+            }]
+
     with SqliteSaver.from_conn_string(":memory:") as memory:
 
         graph = builder.compile(checkpointer=memory)
