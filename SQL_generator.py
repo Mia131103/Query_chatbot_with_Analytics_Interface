@@ -32,6 +32,7 @@ SQL_generation_prompt = """You are an expert SQL generating assistant.\
 You are given the database schema provided in {schema}, the data dictionary provided in {data_dictionary} for more information on the schema and relations, and the user question. \
 Generate SQL for the user question. \
 ONLY generate SELECT statements. \
+Give appropriate column names to any output columns that are aggregated or calculated. \
 
 Return ONLY executable SQL.
 Do not wrap it in markdown.
@@ -47,8 +48,7 @@ Make sure it is a SELECT statement, not INSERT, DELETE, UPDATE etc \
 Use the {schema} and the {data_dictionary} to check for these errors. \
 
 Do not pick errors over efficiency or be nitpicky. \
-Only give error when it will definitely cause the query to fail or \
-given incorrect results.\
+Only give error when it will definitely cause the query to fail or given incorrect results.\
 
 Response should be generated according to the provided structured output.\
 """
@@ -59,6 +59,7 @@ You are given the user question, the SQL generated against that question, and th
 Fix the problem in the SQL according to the error given and generate the new SQL code. \
 Use the {schema} and the {data_dictionary} to understand the database.\
 ONLY generate SELECT statements. \
+Give appropriate column names to any output columns that are aggregated or calculated. \
 
 Return ONLY corrected executable SQL.
 Do not wrap it in markdown.
