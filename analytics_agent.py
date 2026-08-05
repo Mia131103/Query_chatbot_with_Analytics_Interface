@@ -10,10 +10,12 @@ import pandas as pd
 from visualisations import build_chart
 from enum import Enum
 from database import get_schema, data_dictionary, db
+from SQL_generator import run_agent
 
 load_dotenv(find_dotenv())
 schema = get_schema(db)
 
+#For 'type' in chart spec
 class ChartType(str, Enum):
     BAR = "bar"
     LINE = "line"
@@ -22,21 +24,26 @@ class ChartType(str, Enum):
     HISTOGRAM = "histogram"
     BOX = "box"
 
+#For analytics agent state
 class AgentState(TypedDict):
     question: str
     sql: str
     chart_specs: list[dict]
-    descriptions: list[str]
 
+#Chart specifications for each chart to be generated
 class ChartSpecs(BaseModel):
-    type: ChartType
-    x: str
-    y: str
     title: str
+    goal: str
+    type: ChartType
+    sql: str
+    x: str = ""
+    y: str = ""
+    description: str = ""
 
 class ChartList(BaseModel):
     charts: list[ChartSpecs]
 
+#Return type for the run_analytics function
 class Analytics_result(TypedDict):
     title: str
     figure: Any
@@ -45,19 +52,15 @@ class Analytics_result(TypedDict):
 
 # === PROMPTS FOR THE LLM NODES ===
 
-#Planner
+#planner 
 planner_prompt = """You are an analytics expert. \
 You are given the user question and the sql code generated against the user request. \
-Generate between 1 and 4 most useful visualisations with the context that the user is a healtcare provider. \
+You work for a healthcare provider. \
+Deduce 1 to 4 visualisations that would be useful for a healthcare provider to see. \
+It is not necessary that the visualisations are directly related to the user question. \
+Use the {schema} and the {data_dictionary} to better understand the database and the relations between tables. \
 
-
-Use the {schema} and the {data_dictionary} to get the columns names for x and y labels. \
-Never invent columns.\
-Never rename columns.\
-Never convert snake_case to Title Case.\
-
-Do not write python.\
-Respond ONLY in the output structure provided.\
+Provide the title, goal of the visualisation and the type of chart to be generated. \
 'type' MUST be EXACTLY one of:
 bar\
 line\
@@ -65,15 +68,27 @@ scatter\
 pie\
 histogram\
 box\
+
+Respond ONLY in the output structure's title, goal and type fields.
+"""
+
+#Chart specifications
+chart_specs_prompt = """You are a graph agent.
+You are given the title of the chart, goal of the visualisation and the type of chart to be generated. \
+Column names and their data types are also given; Use ONLY this to create x and y labels. \
+Never invent columns.\
+Never rename columns.\
+Never convert snake_case to Title Case.\
+
+Respond ONLY in the output structure's x and y fields.
 """
 
 #Generating insights
 generate_insight_prompt = """You are a bussiness analyst.
-You are given the user question, sql, and the chart specifications.\
-Generate a concise sentence explaining the main takeaway from the chart. \
+You are given the user question, and the chart specifications: goal, title, type, x and y labels.\
+Generate a concise phrase explaining the main takeaway from the chart. \
 Do not invent facts.\
-Only use the data given.
-"""
+Only use the data given."""
 
 # === FUNCTIONS FOR GRAPH NODES ===
 
@@ -86,32 +101,56 @@ def planner_node(state: AgentState):
     )
     response = model.with_structured_output(ChartList).invoke(messages)
     return {"chart_specs": response.charts}
-    
+
+#SQL_agent node
+def SQL_agent_node(state: AgentState):
+    for chart in state['chart_specs']:
+        result = run_agent(chart.goal)['sql']
+        chart.sql = result
+    return {"chart_specs": state['chart_specs']}
+
+#Chart specification node
+def chart_spec_node(state: AgentState):
+    for chart in (state['chart_specs']):
+        df = pd.DataFrame(db.query(chart.sql))
+        dtypes = df.dtypes.apply(lambda x: x.name).to_dict()
+        userMessage = HumanMessage(content=f"Title: {chart.title}\n Goal: {chart.goal}\n Graph Type: {chart.type}\n Data Types: {dtypes}")
+        messages = (
+            SystemMessage(content=chart_specs_prompt),
+            userMessage
+        )
+        response = model.with_structured_output(ChartSpecs).invoke(messages)
+        chart.x = response.x
+        chart.y = response.y
+    return {"chart_specs": state['chart_specs']}
+
 #Generate Insights node
 def generate_insight_node(state: AgentState):
-    descriptions = []
     for spec in state['chart_specs']:
         messages = (
             SystemMessage(content=generate_insight_prompt),
             HumanMessage(content=f"""
                          User question: {state['question']}\n
-                         SQL: {state['sql']}\n
-                         Chart specifications:
-                         Chart title {spec.title}\n
-                         Chart type {spec.type}\n
+                         Chart goal: {spec.goal}\n
+                         Chart title: {spec.title}\n
+                         Chart type: {spec.type}\n
                          X axis: {spec.x}\n
                          Y axis: {spec.y}""")
         )
         response = model.invoke(messages)
-        descriptions.append(response.content)
-    return {"descriptions": descriptions}
+        spec.description = response.content
+    return {"chart_specs": state['chart_specs']}
 
 # === BUILDING THE GRAPH ===
 builder = StateGraph(AgentState)
 builder.add_node("Planner", planner_node)
+builder.add_node("SQL_agent", SQL_agent_node)
+builder.add_node("Chart_specifications", chart_spec_node)
 builder.add_node("Generate_Insights", generate_insight_node)
 builder.set_entry_point("Planner")
-builder.add_edge("Planner", "Generate_Insights")
+builder.add_edge("Planner", "SQL_agent")
+builder.add_edge("SQL_agent", "Chart_specifications")
+builder.add_edge("Chart_specifications", "Generate_Insights")
 builder.add_edge("Generate_Insights", END)
 
 model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
@@ -132,18 +171,17 @@ def run_analytics(result: dict) -> list[dict]:
         state = {
             "question": result['user'],
             "sql": result['sql'],
-            "chart_specs": [],
-            "descriptions": []
+            "chart_specs": []
         }
         final_state = graph.invoke(state, thread)
-
-        df = pd.DataFrame(result['data'])
+        
         analytics: list[Analytics_result] = []
-        for spec, desc in zip(final_state['chart_specs'], final_state['descriptions']):
-            fig = build_chart(df, spec)
+        for chart in (final_state['chart_specs']):
+            df = pd.DataFrame(db.query(chart.sql))
+            fig = build_chart(df, chart)
             analytics.append({
-                "title": spec.title,
+                "title": chart.title,
                 "figure": fig,
-                "description": desc
+                "description": chart.description
             })
         return analytics
