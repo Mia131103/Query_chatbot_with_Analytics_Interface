@@ -9,8 +9,10 @@ from pydantic import BaseModel
 import pandas as pd
 from visualisations import build_chart
 from enum import Enum
+from database import get_schema, data_dictionary, db
 
 load_dotenv(find_dotenv())
+schema = get_schema(db)
 
 class ChartType(str, Enum):
     BAR = "bar"
@@ -45,13 +47,18 @@ class Analytics_result(TypedDict):
 
 #Planner
 planner_prompt = """You are an analytics expert. \
-You take the user question and the sql code generated against the user request. \
-Generate between 1 and 4 most useful visualisations given the context. \
+You are given the user question and the sql code generated against the user request. \
+Generate between 1 and 4 most useful visualisations with the context that the user is a healtcare provider. \
+
+
+Use the {schema} and the {data_dictionary} to get the columns names for x and y labels. \
 Never invent columns.\
+Never rename columns.\
+Never convert snake_case to Title Case.\
+
 Do not write python.\
 Respond ONLY in the output structure provided.\
 'type' MUST be EXACTLY one of:
-
 bar\
 line\
 scatter\
@@ -74,7 +81,7 @@ Only use the data given.
 def planner_node(state: AgentState):
     UserMessage = HumanMessage(content=f"User Question: {state['question']}\n\nSQL geenrated: {state['sql']}")
     messages = (
-        SystemMessage(content=planner_prompt),
+        SystemMessage(content=planner_prompt.format(schema=schema, data_dictionary=data_dictionary)),
         UserMessage
     )
     response = model.with_structured_output(ChartList).invoke(messages)
