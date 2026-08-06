@@ -15,22 +15,13 @@ from SQL_generator import run_agent
 load_dotenv(find_dotenv())
 schema = get_schema(db)
 
-#For 'type' in chart spec
-class ChartType(str, Enum):
-    BAR = "bar"
-    LINE = "line"
-    SCATTER = "scatter"
-    PIE = "pie"
-    HISTOGRAM = "histogram"
-    BOX = "box"
-
 #For analytics agent state
 class AgentState(TypedDict):
     question: str
     sql: str
     chart_specs: list[dict]
 
-#Chart specifications for each chart to be generated
+    #Chart specifications for each chart to be generated
 class ChartSpecs(BaseModel):
     title: str
     goal: str
@@ -42,6 +33,20 @@ class ChartSpecs(BaseModel):
 
 class ChartList(BaseModel):
     charts: list[ChartSpecs]
+
+#For 'type' in chart spec
+class ChartType(str, Enum):
+    BAR = "bar"
+    LINE = "line"
+    SCATTER = "scatter"
+    PIE = "pie"
+    HISTOGRAM = "histogram"
+    BOX = "box"
+
+#Return type for chart axis node
+class chartAxis(BaseModel):
+    x: str
+    y: str
 
 #Return type for the run_analytics function
 class Analytics_result(TypedDict):
@@ -112,14 +117,15 @@ def SQL_agent_node(state: AgentState):
 #Chart specification node
 def chart_spec_node(state: AgentState):
     for chart in (state['chart_specs']):
-        df = pd.DataFrame(db.query(chart.sql))
+        data = db.query(chart.sql)
+        df = pd.DataFrame(data.result_rows, columns=data.column_names)
         dtypes = df.dtypes.apply(lambda x: x.name).to_dict()
         userMessage = HumanMessage(content=f"Title: {chart.title}\n Goal: {chart.goal}\n Graph Type: {chart.type}\n Data Types: {dtypes}")
         messages = (
             SystemMessage(content=chart_specs_prompt),
             userMessage
         )
-        response = model.with_structured_output(ChartSpecs).invoke(messages)
+        response = model.with_structured_output(chartAxis).invoke(messages)
         chart.x = response.x
         chart.y = response.y
     return {"chart_specs": state['chart_specs']}
@@ -177,7 +183,8 @@ def run_analytics(result: dict) -> list[dict]:
         
         analytics: list[Analytics_result] = []
         for chart in (final_state['chart_specs']):
-            df = pd.DataFrame(db.query(chart.sql))
+            data = db.query(chart.sql)
+            df = pd.DataFrame(data.result_rows, columns=data.column_names)
             fig = build_chart(df, chart)
             analytics.append({
                 "title": chart.title,
