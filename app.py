@@ -2,6 +2,12 @@ import streamlit as st
 import pandas as pd
 from SQL_generator import run_agent
 from analytics_agent import run_analytics
+from langchain_core.messages import HumanMessage, AIMessage
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "previous_sql" not in st.session_state:
+    st.session_state.previous_sql = ""
 
 st.set_page_config(
     page_title="SQL Analytics Agent",
@@ -10,7 +16,7 @@ st.set_page_config(
 st.title("SQL Analytics Agent")
 
 sql_tab, analytics_tab = st.tabs(
-    ["SQL Querry", "Analytics"]
+    ["SQL Query", "Analytics"]
 )
 
 with sql_tab:
@@ -29,7 +35,9 @@ with analytics_tab:
     
 if generate:
     with st.spinner("Generating SQL..."):
-        result = run_agent(question)
+        st.session_state.messages.append(HumanMessage(content=question))
+        result = run_agent(st.session_state.messages, st.session_state.previous_sql)
+        st.session_state.previous_sql = result["sql"]
         df = pd.DataFrame(result["data"])
 
         with sql_tab:
