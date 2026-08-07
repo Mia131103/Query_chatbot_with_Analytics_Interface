@@ -113,7 +113,7 @@ def SQL_agent_node(state: AgentState):
     for chart in state['chart_specs']:
         messages = [HumanMessage(content=chart.goal)]
         result = run_agent(messages, previous_sql="")
-        chart.sql = result
+        chart.sql = result['sql']
     return {"chart_specs": state['chart_specs']}
 
 #Chart specification node
@@ -162,6 +162,7 @@ builder.add_edge("Chart_specifications", "Generate_Insights")
 builder.add_edge("Generate_Insights", END)
 
 model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+graph = builder.compile()
 
 def run_analytics(result: dict) -> list[dict]:
 
@@ -172,25 +173,21 @@ def run_analytics(result: dict) -> list[dict]:
             "description": "The query generated no rows. Analytics cannot be generated."
             }]
 
-    with SqliteSaver.from_conn_string(":memory:") as memory:
-
-        graph = builder.compile(checkpointer=memory)
-        thread = {"configurable": {"thread_id": "1"}}
-        state = {
-            "question": result['resolved_request'],
-            "sql": result['sql'],
-            "chart_specs": []
-        }
-        final_state = graph.invoke(state, thread)
-        
-        analytics: list[Analytics_result] = []
-        for chart in (final_state['chart_specs']):
-            data = db.query(chart.sql)
-            df = pd.DataFrame(data.result_rows, columns=data.column_names)
-            fig = build_chart(df, chart)
-            analytics.append({
-                "title": chart.title,
-                "figure": fig,
-                "description": chart.description
-            })
-        return analytics
+    state = {
+        "question": result['resolved_request'],
+        "sql": result['sql'],
+        "chart_specs": []
+    }
+    final_state = graph.invoke(state)
+    
+    analytics: list[Analytics_result] = []
+    for chart in (final_state['chart_specs']):
+        data = db.query(chart.sql)
+        df = pd.DataFrame(data.result_rows, columns=data.column_names)
+        fig = build_chart(df, chart)
+        analytics.append({
+            "title": chart.title,
+            "figure": fig,
+            "description": chart.description
+        })
+    return analytics
