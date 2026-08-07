@@ -66,6 +66,7 @@ It is not necessary that the visualisations are directly related to the user que
 Use the {schema} and the {data_dictionary} to better understand the database and the relations between tables. \
 
 Provide the title, goal of the visualisation and the type of chart to be generated. \
+Goal of the visualisation should be a concise sentence describing the purpose of the visualisation. \
 'type' MUST be EXACTLY one of:
 bar\
 line\
@@ -110,7 +111,8 @@ def planner_node(state: AgentState):
 #SQL_agent node
 def SQL_agent_node(state: AgentState):
     for chart in state['chart_specs']:
-        result = run_agent(chart.goal)['sql']
+        messages = [HumanMessage(content=chart.goal)]
+        result = run_agent(messages, previous_sql="")
         chart.sql = result
     return {"chart_specs": state['chart_specs']}
 
@@ -175,7 +177,7 @@ def run_analytics(result: dict) -> list[dict]:
         graph = builder.compile(checkpointer=memory)
         thread = {"configurable": {"thread_id": "1"}}
         state = {
-            "question": result['user'],
+            "question": result['resolved_request'],
             "sql": result['sql'],
             "chart_specs": []
         }
