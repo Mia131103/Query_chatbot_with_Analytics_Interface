@@ -59,11 +59,20 @@ class Analytics_result(TypedDict):
 
 #planner 
 planner_prompt = """You are an analytics expert. \
-You are given the user question and the sql code generated against the user request. \
 You work for a healthcare provider. \
-Deduce 1 to 4 visualisations that would be useful for a healthcare provider to see. \
-It is not necessary that the visualisations are directly related to the user question. \
+    
+You are given the user question and the sql code generated against the user request. \
 Use the {schema} and the {data_dictionary} to better understand the database and the relations between tables. \
+
+Deduce 1 to 4 visualisations that would be useful for a healthcare provider to see. \
+Prefer visualizations that:
+- aggregate data
+- compare categories
+- identify trends over time
+- reveal distributions
+- summarize provider or patient activity
+- highlight outliers or performance differences\
+It is not necessary that the visualisations are directly related to the user question. \
 
 Provide the title, goal of the visualisation and the type of chart to be generated. \
 Goal of the visualisation should be a concise sentence describing the purpose of the visualisation. \
@@ -182,8 +191,18 @@ def run_analytics(result: dict) -> list[dict]:
     
     analytics: list[Analytics_result] = []
     for chart in (final_state['chart_specs']):
+
         data = db.query(chart.sql)
+
+        #check if query had some bug
+        if not data.column_names:
+            continue
         df = pd.DataFrame(data.result_rows, columns=data.column_names)
+
+        #check if query returned no rows
+        if df.empty or chart.x not in df.columns or chart.y not in df.columns:
+            continue
+
         fig = build_chart(df, chart)
         analytics.append({
             "title": chart.title,
