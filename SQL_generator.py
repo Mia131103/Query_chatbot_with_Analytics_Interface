@@ -25,6 +25,8 @@ class AgentState(TypedDict):
     data: list[dict[str, Any]]
     regenerations: int
 
+    resolved_request: str
+
 class SQLCheck(BaseModel):
     valid: bool
     error: str
@@ -65,9 +67,12 @@ Response should be generated according to the provided structured output.\
 
 #SQL generation on error
 SQL_generation_error_prompt = """You are an expert SQL generator. \
-You are given the user question, the SQL generated against that question, and the error in that code. \
-Fix the problem in the SQL according to the error given and generate the new SQL code. \
+You are given the latest user question, the SQL generated against that question, and the error in that code. \
 Use the {schema} and the {data_dictionary} to understand the database.\
+
+Your task is to fix the problem in the SQL according to the error given and generate the new SQL code. \
+Do not change the intent of the query unless the error clearly requires it. \
+
 ONLY generate SELECT statements. \
 Give appropriate column names to any output columns that are aggregated or calculated. \
 
@@ -76,13 +81,23 @@ Do not wrap it in markdown.
 Do not explain your answer.
 Do not include ```sql. """
 
+#Resolved request prompt
+resolved_request_prompt = """
+You will be given the chat history of a user and AI assistanat. \
+Your task is to deduce the full request of the user in one concise sentence. \
+
+That means if there are follow up questions, find the first question and then all the follow ups and summarise all the requests into one.
+If it is a new question, then just output the questions as it is.
+
+Respond ONLY in one line with that request."""
+
 # === CREATING ALL NODE FUNCTIONS ===
 
 #SQL Gneration node
 def SQL_generation_node(state: AgentState):
     latest_user = state['messages'][-1].content
     UserMessage = HumanMessage(
-        content=f"User Question: {latest_user}\nPrevious SQL: {state['prev_sql']}"
+        content=f"User Question: {latest_user}\nPrevious SQL: {state['prev_sql']}\nChat history:"
     )
     messages = [
         SystemMessage(content=SQL_generation_prompt.format(schema=schema, data_dictionary=data_dictionary)),
@@ -144,6 +159,14 @@ def fetch_data_node(state: AgentState):
     ]
     return {"data": rows}
 
+#Resolved request node
+def resolved_node(state: AgentState):
+    messages = [
+        SystemMessage(content=resolved_request_prompt)
+    ] + state['messages']
+    response = model.invoke(messages)
+    return {"resolved_request": response.content}
+
 # === CONDITIONAL EDGE FUNCTIONS ===
 
 #Has LLM verified
@@ -167,6 +190,7 @@ builder.add_node("LLM_verification", llm_verification_node)
 builder.add_node("Execute_verification", execute_verification_node)
 builder.add_node("SQL_Regeneration", SQL_regeneration_node)
 builder.add_node("Fetch_data", fetch_data_node)
+builder.add_node("Resolved_request", resolved_node)
 
 builder.set_entry_point("SQL_Generation")
 builder.add_edge("SQL_Generation", "LLM_verification")
@@ -178,9 +202,10 @@ builder.add_conditional_edges(
 builder.add_conditional_edges(
     "Execute_verification",
     execute_verified,
-    {True: "Fetch_data", False: "SQL_Regeneration"}
+    {True: "Resolved_request", False: "SQL_Regeneration"}
 )
 builder.add_edge("SQL_Regeneration", "LLM_verification")
+builder.add_edge("Resolved_request", "Fetch_data")
 builder.add_edge("Fetch_data", END)
 
 model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
@@ -194,7 +219,8 @@ def run_agent(messages: list[AnyMessage], previous_sql: str) -> dict:
         "llm_critique": "",
         "execute_error": "",
         "data": [],
-        "regenerations": 0
+        "regenerations": 0,
+        "resolved_request": ""
     }
     final_state = graph.invoke(state)
     return final_state
