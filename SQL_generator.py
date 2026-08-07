@@ -1,10 +1,10 @@
 from langgraph.graph import StateGraph, END
-from typing import TypedDict, Any
-from langchain_core.messages import AnyMessage, SystemMessage, HumanMessage, ToolMessage, AIMessage
+from typing import Annotated, TypedDict, Any
+from langchain_core.messages import AnyMessage, SystemMessage, HumanMessage, AIMessage
+from langgraph.graph.message import add_messages
 from langchain_openai import ChatOpenAI
 import os
 from dotenv import load_dotenv, find_dotenv 
-from langgraph.checkpoint.sqlite import SqliteSaver
 from pydantic import BaseModel
 from database import get_schema, db, data_dictionary
 
@@ -14,8 +14,12 @@ load_dotenv(find_dotenv())
 schema = get_schema(db)
 
 class AgentState(TypedDict):
-    user: str
+   # user: str
+    messages: Annotated[list[AnyMessage], add_messages]
+
     sql: str
+    prev_sql: str
+
     llm_critique: str
     execute_error: str
     data: list[dict[str, Any]]
@@ -29,8 +33,14 @@ class SQLCheck(BaseModel):
 
 #SQL generating node
 SQL_generation_prompt = """You are an expert SQL generating assistant.\
-You are given the database schema provided in {schema}, the data dictionary provided in {data_dictionary} for more information on the schema and relations, and the user question. \
+
+You are given the user question, the user messages history and the SQL generated for the last question. \
+Use the database schema provided in {schema} and the data dictionary provided in {data_dictionary} for more information on the schema and relations. \
+
 Generate SQL for the user question. \
+If the latest request is a follow up question, modify the previous SQL accordingly. \
+Otherwise, generate a new SQL query. \
+
 ONLY generate SELECT statements. \
 Give appropriate column names to any output columns that are aggregated or calculated. \
 
@@ -70,17 +80,22 @@ Do not include ```sql. """
 
 #SQL Gneration node
 def SQL_generation_node(state: AgentState):
+    latest_user = state['messages'][-1].content
+    UserMessage = HumanMessage(
+        content=f"User Question: {latest_user}\nPrevious SQL: {state['prev_sql']}"
+    )
     messages = [
         SystemMessage(content=SQL_generation_prompt.format(schema=schema, data_dictionary=data_dictionary)),
-        HumanMessage(content=state['user'])
-    ]
+        UserMessage
+    ] + state['messages'][:-1]
     response = model.invoke(messages)
     return {"sql": response.content}
 
 #LLM verification node
 def llm_verification_node(state: AgentState):
+    latest_user = state['messages'][-1].content
     UserMessage = HumanMessage(
-        content=f"User Question: {state['user']}\nSQL generated: {state['sql']}"
+        content=f"User Question: {latest_user}\nSQL generated: {state['sql']}"
     )
     messages = [
         SystemMessage(content=llm_verification_prompt.format(schema=schema, data_dictionary=data_dictionary)),
@@ -104,8 +119,9 @@ def execute_verification_node(state: AgentState):
 #SQL Regeneration node
 def SQL_regeneration_node(state: AgentState):
     error = (state["llm_critique"] or state['execute_error'])
+    latest_user = state['messages'][-1].content
     UserMessage = HumanMessage(
-        content=f"User Question: {state['user']}\n\nGenerated SQL: {state['sql']}\n\nError: {error}"
+        content=f"User Question: {latest_user}\n\nGenerated SQL: {state['sql']}\n\nError: {error}"
     )
     messages = [
         SystemMessage(content=SQL_generation_error_prompt.format(schema=schema, data_dictionary=data_dictionary)),
@@ -168,20 +184,17 @@ builder.add_edge("SQL_Regeneration", "LLM_verification")
 builder.add_edge("Fetch_data", END)
 
 model = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+graph = builder.compile()
 
-def run_agent(question: str) -> dict:
-    with SqliteSaver.from_conn_string(":memory:") as memory:
-        
-        graph = builder.compile(checkpointer=memory)
-    
-        thread = {"configurable": {"thread_id": "1"}}
-        state = {
-            "user": question,
-            "sql": "",
-            "llm_critique": "",
-            "execute_error": "",
-            "data": [],
-            "regenerations": 0
-        }
-        final_state = graph.invoke(state, thread)
-        return final_state
+def run_agent(messages: list[AnyMessage], previous_sql: str) -> dict:
+    state = {
+        "messages": messages,
+        "sql": "",
+        "prev_sql": previous_sql,
+        "llm_critique": "",
+        "execute_error": "",
+        "data": [],
+        "regenerations": 0
+    }
+    final_state = graph.invoke(state)
+    return final_state
