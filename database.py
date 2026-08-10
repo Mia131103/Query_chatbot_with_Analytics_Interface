@@ -58,12 +58,12 @@ Primary Key:
 
 Columns:
 - patient_id (Identifier)
-- first_name (Categorical/Text)
-- last_name (Categorical/Text)
-- gender (Categorical)
+- first_name (Text)
+- last_name (Text)
+- gender (Categorical: Male/Female)
 - date_of_birth (Date)
 - phone (Text)
-- city (Categorical)
+- city (Categorical) 
 - state (Categorical)
 
 =================================================================
@@ -81,8 +81,8 @@ Relationship:
 
 Columns:
 - provider_id (Identifier)
-- first_name (Categorical/Text)
-- last_name (Categorical/Text)
+- first_name (Text)
+- last_name (Text)
 - specialty (Categorical)
 - department_id (Foreign Key)
 
