@@ -20,33 +20,24 @@ sql_tab, analytics_tab = st.tabs(
 )
 
 with sql_tab:
-    st.write("SQL Query Page")
-
-    question = st.text_area(
-            "Ask your question"
-        )
+    st.write("Hello! How can I help you today?")
+    question = st.text_area("Ask Database related question.")
     generate = st.button("Generate SQL")
-
-with analytics_tab:
-    st.write("Analytics Page")
-            
-    st.header("Analytics")
-    st.info("Run a SQL query first.")
     
 if generate:
-    with st.spinner("Generating SQL..."):
+    st.session_state.messages.append(HumanMessage(content=question))
+    result = run_agent(st.session_state.messages, st.session_state.previous_sql)
 
-        st.session_state.messages.append(HumanMessage(content=question))
-        result = run_agent(st.session_state.messages, st.session_state.previous_sql)
+    if not result["relevance"]:
+        st.session_state.messages.append(AIMessage(content=result["response"]))
+        st.warning(result["response"])
+    else: 
+        st.session_state.previous_sql = result["sql"]
+        df = pd.DataFrame(result["data"])
 
-        if not result["relevance"]:
-            st.session_state.messages.append(AIMessage(content=result["response"]))
-            st.warning(result["response"])
-        else: 
-            st.session_state.previous_sql = result["sql"]
-            df = pd.DataFrame(result["data"])
+        with sql_tab:
+            with st.spinner("Generating SQL..."):
 
-            with sql_tab:
                 st.subheader("Generated SQL")
                 st.code(
                     result["sql"],
@@ -61,14 +52,29 @@ if generate:
                 if result["llm_critique"]:
                     st.error(result["llm_critique"])
 
-            with analytics_tab:
+        with analytics_tab:
+            with st.spinner("Generating Analytics..."):
+
                 charts = run_analytics(result)
 
-                for chart in charts:
-                    st.subheader(chart['title'])
-                    if chart["figure"] is not None:
-                        st.plotly_chart(chart['figure'], width="stretch")
-                    st.write(chart['description'])
+                if not charts: 
+                    st.info("No meaningful analytics could be generated.")
+                else:
+                    for i in range(0, len(charts), 2):
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            chart = charts[i]
+                            st.subheader(chart['title'])
+                            st.plotly_chart(chart['figure'], width="stretch", config={"displayModBar": False})
+                            st.caption(chart['description'])
+
+                        if i+1 < len(charts):
+                            with col2:
+                                chart = charts[i + 1]
+                                st.subheader(chart['title'])
+                                st.plotly_chart(chart['figure'], width="stretch", config={"displayModBar": False})
+                                st.caption(chart['description'])
 
 
 
