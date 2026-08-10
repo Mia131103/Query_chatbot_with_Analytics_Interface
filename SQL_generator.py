@@ -167,12 +167,8 @@ Do not include ```sql. """
 
 #Resolved request prompt
 resolved_request_prompt = """
-You will be given the chat history of a user and AI assistanat. \
+You will be given the sql generated for a user request. \
 Your task is to deduce the full request of the user in one concise sentence. \
-
-That means if there are follow up questions, find the first question and then all the follow ups and summarise all the requests into one.
-If it is a new question, then just output the questions as it is.\
-Treat every question as new question, unless it is obviously referring to the last generated data (with words like 'only', 'ones', 'from this'). \
 
 Respond ONLY in one line with that request."""
 
@@ -243,6 +239,15 @@ def SQL_regeneration_node(state: AgentState):
         "regenerations": state.get("regenerations", 1) + 1
     }
 
+#Resolved request node
+def resolved_node(state: AgentState):
+    messages = [
+        SystemMessage(content=resolved_request_prompt),
+        HumanMessage(content= state['sql'])
+    ]
+    response = model.invoke(messages)
+    return {"resolved_request": response.content}
+
 #Fetching the actual data node
 def fetch_data_node(state: AgentState):
     result = db.query(state["sql"])
@@ -251,14 +256,6 @@ def fetch_data_node(state: AgentState):
         for row in result.result_rows
     ]
     return {"data": rows}
-
-#Resolved request node
-def resolved_node(state: AgentState):
-    messages = [
-        SystemMessage(content=resolved_request_prompt)
-    ] + state['messages']
-    response = model.invoke(messages)
-    return {"resolved_request": response.content}
 
 # === CONDITIONAL EDGE FUNCTIONS ===
 
