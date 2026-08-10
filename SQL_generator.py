@@ -36,20 +36,46 @@ class SQLCheck(BaseModel):
 #SQL generating node
 SQL_generation_prompt = """You are an expert SQL generating assistant.\
 
-You are given the user question, the user messages history and the SQL generated for the last question. \
-Use the database schema provided in {schema} and the data dictionary provided in {data_dictionary} for more information on the schema and relations. \
+You are given the user question, the user messages history and the SQL generated for the last question.\
 
-Generate SQL for the user question. \
-If the latest request is a follow up question, modify the previous SQL accordingly. \
-Otherwise, generate a new SQL query. \
+You are querying a ClickHouse database.\
 
-ONLY generate SELECT statements. \
-Give appropriate column names to any output columns that are aggregated or calculated. \
+Use the database schema provided in {schema} and the data dictionary provided in {data_dictionary}
+for more information on the schema, column meanings, relationships and data types.\
+
+Generate SQL for the user question.\
+If the latest request is a follow up question, modify the previous SQL accordingly.
+Otherwise, generate a new SQL query.\
+
+IMPORTANT CLICKHOUSE RULES:
+
+1. Use ClickHouse SQL syntax only.
+
+2. Do NOT use SQL functions from other database systems when an equivalent
+   ClickHouse function exists.
+
+3. For categorical columns, use LIKE when matching natural-language
+   categorical values where minor formatting differences may exist.
+
+   Example:
+   appointment_type LIKE '%follow-up%'
+
+4. All values in the database are in Title Case.
+
+5. Do not use CURDATE(). Use today() for the current date.
+
+6. Only use columns that exist in the schema.
+
+7. Only generate SELECT statements.
+
+8. Give appropriate column names to any output columns that are
+   aggregated or calculated.
 
 Return ONLY executable SQL.
 Do not wrap it in markdown.
 Do not explain your answer.
-Do not include ```sql. """
+Do not include ```sql.
+"""
 
 #LLM verification node
 llm_verification_prompt = """
