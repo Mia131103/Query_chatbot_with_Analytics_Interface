@@ -9,11 +9,10 @@ from pydantic import BaseModel
 import pandas as pd
 from visualisations import build_chart
 from enum import Enum
-from database import get_schema, data_dictionary, db
-from SQL_generator import run_agent
+from database import schema, data_dictionary, db
+from prompts import planner_prompt, analytics_sql_prompt, chart_specs_prompt, generate_insight_prompt
 
 load_dotenv(find_dotenv())
-schema = get_schema(db)
 
 #For analytics agent state
 class AgentState(TypedDict):
@@ -54,69 +53,6 @@ class Analytics_result(TypedDict):
     figure: Any
     description: str
 
-
-# === PROMPTS FOR THE LLM NODES ===
-
-#planner 
-planner_prompt = """You are an analytics expert. \
-You work for a healthcare provider. \
-    
-You are given the user question and the sql code generated against the user request. \
-Use the {schema} and the {data_dictionary} to better understand the database and the relations between tables. \
-
-Your task is to deduce USEFUL visualisations that will assist the healthcare provider. \
-Provide the title, goal of the visualisation and the type of chart to be generated. \
-
-Rules for visualisations:
-
-1. For each visualization, first identify a business question that a healthcare provider would want answered. Only generate a visualization if it clearly answers that question.
-2. Prefer visualizations that:
-- aggregate data
-- compare categories
-- reveal distributions
-- highlight outliers or performance differences
-3. It is not necessary that the visualisations are directly related to the user question. 
-4. Never use identifier columns as x or y axes. Identifiers should not be grouped or plotted.
-5. Avoid visualizations that:
-- plot individual records
-- compare values that are unlikely to vary
-- are expected to produce nearly constant values
-- simply restate the user's query without providing additional insight
-6. Use identifier columns only for joins.
-7. Use categorical columns for grouping.
-8. Use numeric columns for aggregation.
-9. Use date columns for trends.
-10. Do not generate visualizations using identifier columns.
-11. Goal of the visualisation should be a concise sentence describing the purpose of the visualisation. \
-12. 'type' MUST be EXACTLY one of:
-- bar
-- line
-- scatter
-- pie
-- histogram
-- box
-
-Respond ONLY in the output structure's title, goal and type fields.
-"""
-
-#Chart specifications
-chart_specs_prompt = """You are a graph agent.
-You are given the title of the chart, goal of the visualisation and the type of chart to be generated. \
-Column names and their data types are also given; Use ONLY this to create x and y labels. \
-Never invent columns.\
-Never rename columns.\
-Never convert snake_case to Title Case.\
-
-Respond ONLY in the output structure's x and y fields.
-"""
-
-#Generating insights
-generate_insight_prompt = """You are a bussiness analyst.
-You are given the user question, and the chart specifications: goal, title, type, x and y labels.\
-Generate a concise phrase explaining the main takeaway from the chart. \
-Do not invent facts.\
-Only use the data given."""
-
 # === FUNCTIONS FOR GRAPH NODES ===
 
 #Planner node
@@ -131,11 +67,24 @@ def planner_node(state: AgentState):
 
 #SQL_agent node
 def SQL_agent_node(state: AgentState):
-    for chart in state['chart_specs']:
-        messages = [HumanMessage(content=chart.goal)]
-        result = run_agent(messages, previous_sql="")
-        chart.sql = result['sql']
-    return {"chart_specs": state['chart_specs']}
+
+    for chart in state["chart_specs"]:
+        prompt = f"""
+        Chart title: {chart.title}
+        Chart goal: {chart.goal}
+        Chart type: {chart.type}
+        Database schema:
+        {schema}
+        Data dictionary:
+        {data_dictionary}
+        """
+        messages = [
+            SystemMessage(content=analytics_sql_prompt),
+            HumanMessage(content=prompt)
+        ]
+        response = model.invoke(messages)
+        chart.sql = response.content
+    return {"chart_specs": state["chart_specs"]}
 
 #Chart specification node
 def chart_spec_node(state: AgentState):
