@@ -9,7 +9,7 @@ from pydantic import BaseModel
 import pandas as pd
 from visualisations import build_chart
 from enum import Enum
-from database import schema, data_dictionary, db
+from database import schema, data_dictionary, query_db
 from prompts import planner_prompt, analytics_sql_prompt, chart_specs_prompt, generate_insight_prompt
 
 load_dotenv(find_dotenv())
@@ -89,7 +89,7 @@ def SQL_agent_node(state: AgentState):
 #Chart specification node
 def chart_spec_node(state: AgentState):
     for chart in (state['chart_specs']):
-        data = db.query(chart.sql)
+        data = query_db(chart.sql)
         df = pd.DataFrame(data.result_rows, columns=data.column_names)
         dtypes = df.dtypes.apply(lambda x: x.name).to_dict()
         userMessage = HumanMessage(content=f"Title: {chart.title}\n Goal: {chart.goal}\n Graph Type: {chart.type}\n Data Types: {dtypes}")
@@ -153,7 +153,7 @@ def run_analytics(result: dict) -> list[dict]:
     analytics: list[Analytics_result] = []
     for chart in (final_state['chart_specs']):
 
-        data = db.query(chart.sql)
+        data = query_db(chart.sql)
 
         #check if query had some bug
         if not data.column_names:

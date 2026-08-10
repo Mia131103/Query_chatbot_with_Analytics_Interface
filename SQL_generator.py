@@ -6,7 +6,7 @@ from langchain_openai import ChatOpenAI
 import os
 from dotenv import load_dotenv, find_dotenv 
 from pydantic import BaseModel
-from database import schema, data_dictionary, db
+from database import schema, data_dictionary, query_db
 from prompts import relevance_check_prompt, SQL_generation_prompt, llm_verification_prompt, resolved_request_prompt, SQL_generation_error_prompt
 
 #Loading env and making our tool
@@ -78,9 +78,8 @@ def execute_verification_node(state: AgentState):
     sql = state['sql'].strip().upper()
     if not sql.startswith("SELECT"):
         return {"execute_error": "Only SELECT statements are allowed."}
-
     try:
-        db.query(state['sql'])
+        query_db(state['sql'])
         return {"execute_error": ""}
     except Exception as e:
         return {"execute_error": str(e)}
@@ -115,7 +114,7 @@ def resolved_node(state: AgentState):
 
 #Fetching the actual data node
 def fetch_data_node(state: AgentState):
-    result = db.query(state["sql"])
+    result = query_db(state['sql'])
     rows = [
         dict(zip(result.column_names, row))
         for row in result.result_rows
