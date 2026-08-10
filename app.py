@@ -35,34 +35,40 @@ with analytics_tab:
     
 if generate:
     with st.spinner("Generating SQL..."):
+
         st.session_state.messages.append(HumanMessage(content=question))
         result = run_agent(st.session_state.messages, st.session_state.previous_sql)
-        st.session_state.previous_sql = result["sql"]
-        df = pd.DataFrame(result["data"])
 
-        with sql_tab:
-            st.subheader("Generated SQL")
-            st.code(
-                result["sql"],
-                language = "sql"
-            )
+        if not result["relevance"]:
+            st.session_state.messages.append(AIMessage(content=result["response"]))
+            st.warning(result["response"])
+        else: 
+            st.session_state.previous_sql = result["sql"]
+            df = pd.DataFrame(result["data"])
 
-            st.subheader("Results")
-            st.dataframe(df, use_container_width=True)
+            with sql_tab:
+                st.subheader("Generated SQL")
+                st.code(
+                    result["sql"],
+                    language = "sql"
+                )
 
-            if result["execute_error"]:
-                st.error(result["execute_error"])
-            if result["llm_critique"]:
-                st.error(result["llm_critique"])
+                st.subheader("Results")
+                st.dataframe(df, use_container_width=True)
 
-        with analytics_tab:
-            charts = run_analytics(result)
+                if result["execute_error"]:
+                    st.error(result["execute_error"])
+                if result["llm_critique"]:
+                    st.error(result["llm_critique"])
 
-            for chart in charts:
-                st.subheader(chart['title'])
-                if chart["figure"] is not None:
-                    st.plotly_chart(chart['figure'], width="stretch")
-                st.write(chart['description'])
+            with analytics_tab:
+                charts = run_analytics(result)
+
+                for chart in charts:
+                    st.subheader(chart['title'])
+                    if chart["figure"] is not None:
+                        st.plotly_chart(chart['figure'], width="stretch")
+                    st.write(chart['description'])
 
 
 
