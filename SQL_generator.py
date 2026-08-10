@@ -27,11 +27,64 @@ class AgentState(TypedDict):
 
     resolved_request: str
 
+    relevance: bool
+    response: str
+
 class SQLCheck(BaseModel):
     valid: bool
     error: str
 
+class RelevanceCheck(BaseModel):
+    relevant: bool
+    response: str
+
 # === PROMPT FOR EACH LLM NODE ===
+
+#Relevance check prompt
+relevance_check_prompt = """
+You are a relevance classifier for a healthcare data analytics assistant.\
+
+The assistant can ONLY answer questions that can be answered using the
+provided database {schema} and {data_dictionary}.\
+
+Determine whether the user's latest question is relevant to the database.\
+
+A question is RELEVANT if it:
+- asks about patients, appointments, providers, diagnoses, procedures,
+  medications, healthcare utilization, costs, demographics, outcomes,
+  or other information represented in the database.
+- asks for filtering, grouping, counting, comparing, aggregating,
+  or analyzing information contained in the database.
+- is a follow-up question to a previous database-related question.
+- asks to modify, clarify, narrow, expand, or further analyze a previous
+  database-related request.
+
+A question is NOT RELEVANT if it:
+- asks about general knowledge unrelated to the database.
+- asks for coding help.
+- asks about SQL itself.
+- asks about weather, sports, news, entertainment, etc.
+- asks the assistant to perform actions unrelated to the database.
+- is casual conversation such as greetings or general chat.
+
+Use the database schema and data dictionary to determine relevance.
+
+IMPORTANT:
+A follow-up question may be short or ambiguous by itself.
+Use the conversation history to determine whether it is a follow-up
+to a relevant database question.
+
+If the question is relevant:
+- relevant = true
+- response should be an empty string
+
+If the question is irrelevant:
+- relevant = false
+- response should politely tell the user that they should only ask
+  questions related to the available healthcare data.
+
+Respond according to the provided structured output.
+"""
 
 #SQL generating node
 SQL_generation_prompt = """You are an expert SQL generating assistant.\
@@ -98,6 +151,7 @@ Use the {schema} and the {data_dictionary} to understand the database.\
 
 Your task is to fix the problem in the SQL according to the error given and generate the new SQL code. \
 Do not change the intent of the query unless the error clearly requires it. \
+Make sure ClickHouse query functions when functions are used in the query. \
 
 ONLY generate SELECT statements. \
 Give appropriate column names to any output columns that are aggregated or calculated. \
@@ -118,6 +172,15 @@ If it is a new question, then just output the questions as it is.
 Respond ONLY in one line with that request."""
 
 # === CREATING ALL NODE FUNCTIONS ===
+
+#Relevance check node
+def relevance_check_node(state: AgentState):
+    messages = [
+        SystemMessage(content=relevance_check_prompt.format(schema=schema, data_dictionary=data_dictionary))
+        + state['messages']
+    ]
+    response = model.with_structured_output(RelevanceCheck).invoke(messages)
+    return {"relevance": response.relevant, "response": response.response}
 
 #SQL Gneration node
 def SQL_generation_node(state: AgentState):
@@ -195,6 +258,10 @@ def resolved_node(state: AgentState):
 
 # === CONDITIONAL EDGE FUNCTIONS ===
 
+#Is question relevant
+def is_relevant(state: AgentState):
+    return state["relevance"]
+
 #Has LLM verified
 def llm_verified(state: AgentState):
     if state['regenerations'] < 3:
@@ -211,6 +278,7 @@ def execute_verified(state: AgentState):
 
 builder = StateGraph(AgentState)
 
+builder.add_node("Relevance_Check", relevance_check_node)
 builder.add_node("SQL_Generation", SQL_generation_node)
 builder.add_node("LLM_verification", llm_verification_node)
 builder.add_node("Execute_verification", execute_verification_node)
@@ -218,7 +286,15 @@ builder.add_node("SQL_Regeneration", SQL_regeneration_node)
 builder.add_node("Fetch_data", fetch_data_node)
 builder.add_node("Resolved_request", resolved_node)
 
-builder.set_entry_point("SQL_Generation")
+builder.set_entry_point("Relevance_Check")
+builder.add_conditional_edges(
+    "Relevance_Check",
+    is_relevant,
+    {
+        True: "SQL_Generation",
+        False: END
+    }
+)
 builder.add_edge("SQL_Generation", "LLM_verification")
 builder.add_conditional_edges(
     "LLM_verification",
@@ -246,7 +322,9 @@ def run_agent(messages: list[AnyMessage], previous_sql: str) -> dict:
         "execute_error": "",
         "data": [],
         "regenerations": 0,
-        "resolved_request": ""
+        "resolved_request": "",
+        "relevance": False,
+        "response": ""
     }
     final_state = graph.invoke(state)
     return final_state
