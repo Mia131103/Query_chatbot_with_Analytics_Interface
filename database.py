@@ -34,6 +34,8 @@ def get_schema(client):
         schema_text += "\n\n"
     return schema_text
 
+schema = get_schema(db)
+
 data_dictionary = """
 Healthcare EHR Database Data Dictionary
 
