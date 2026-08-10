@@ -5,14 +5,22 @@ import os
 load_dotenv(find_dotenv())
 
 #Loading our database
-db = clickhouse_connect.get_client(
-    host=os.getenv("HOST"),
-    port=int(os.getenv("PORT")),
-    username=os.getenv("USER"),
-    password=os.getenv("PASSWORD"),
-    database=os.getenv("DATABASE"),
-    secure= True
-)
+def get_db():
+    return clickhouse_connect.get_client(
+        host=os.getenv("HOST"),
+            port=int(os.getenv("PORT")),
+            username=os.getenv("USER"),
+            password=os.getenv("PASSWORD"),
+            database=os.getenv("DATABASE"),
+            secure= True
+    )
+
+def query_db(sql):
+    client = get_db()
+    try:
+        return client.query(sql)
+    finally:
+        client.close()
 
 def get_schema(client):
     tables = client.query("""
@@ -34,7 +42,7 @@ def get_schema(client):
         schema_text += "\n\n"
     return schema_text
 
-schema = get_schema(db)
+schema = get_schema(get_db())
 
 data_dictionary = """
 Healthcare EHR Database Data Dictionary
