@@ -21,13 +21,13 @@ def build_chart(df: pd.DataFrame, spec: ChartSpecs):
     elif chart_type == "line":
         figure = px.line(df, x=spec.x, y=spec.y, title=spec.title)
     elif chart_type == "scatter":
-        figure = px.line(df, x=spec.x, y=spec.y, title = spec.title)
+        figure = px.scatter(df, x=spec.x, y=spec.y, title = spec.title)
     elif chart_type == "histogram":
         figure = px.histogram(df, x=spec.x, y=spec.y, title=spec.title)
     elif chart_type == "pie":
         figure = px.pie(df, names=spec.x, values=spec.y, title=spec.title)
     elif chart_type == "box":
-        figure = px.pie(df, x=spec.x, y=spec.y, title = spec.title)
+        figure = px.box(df, x=spec.x, y=spec.y, title = spec.title)
     else: 
         raise ValueError(f"Unsupported chart type: {spec.type}")
     return figure
