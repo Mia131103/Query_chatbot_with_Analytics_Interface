@@ -11,6 +11,7 @@ from visualisations import build_chart
 from enum import Enum
 from database import schema, data_dictionary, query_db
 from prompts import planner_prompt, analytics_sql_prompt, chart_specs_prompt, generate_insight_prompt
+from plotly.graph_objects import Figure
 
 load_dotenv(find_dotenv())
 
@@ -165,6 +166,10 @@ def run_analytics(result: dict) -> list[dict]:
             continue
 
         fig = build_chart(df, chart)
+        if not isinstance(fig, Figure):
+            print(f"Invalid figure for chart: {chart.title}")
+            print(f"Received: {type(fig)}")
+            continue
         analytics.append({
             "title": chart.title,
             "figure": fig,
