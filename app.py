@@ -3,6 +3,7 @@ import pandas as pd
 from SQL_generator import run_agent
 from analytics_agent import run_analytics
 from langchain_core.messages import HumanMessage, AIMessage
+from plotly.graph_objects import Figure
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -57,24 +58,23 @@ if generate:
 
                 charts = run_analytics(result)
 
-                if not charts: 
-                    st.info("No meaningful analytics could be generated.")
-                else:
-                    for i in range(0, len(charts), 2):
-                        col1, col2 = st.columns(2)
+                for i in range(0, len(charts), 2):
+                    col1, col2 = st.columns(2)
 
-                        with col1:
-                            chart = charts[i]
+                    with col1:
+                        chart = charts[i]
+                        st.subheader(chart['title'])
+                        if chart['figure']:
+                            st.plotly_chart(chart['figure'], width="stretch", config={"displayModeBar": False})
+                        st.caption(chart['description'])
+
+                    if i+1 < len(charts):
+                        with col2:
+                            chart = charts[i + 1]
                             st.subheader(chart['title'])
-                            st.plotly_chart(chart['figure'], width="stretch", config={"displayModBar": False})
-                            st.caption(chart['description'])
-
-                        if i+1 < len(charts):
-                            with col2:
-                                chart = charts[i + 1]
-                                st.subheader(chart['title'])
+                            if chart['figure']:
                                 st.plotly_chart(chart['figure'], width="stretch", config={"displayModBar": False})
-                                st.caption(chart['description'])
+                            st.caption(chart['description'])
 
 
 
