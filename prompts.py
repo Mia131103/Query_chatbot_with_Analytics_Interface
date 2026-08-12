@@ -97,16 +97,39 @@ Do not include ```sql.
 
 #LLM verification node
 llm_verification_prompt = """
-You are an SQL debugger. \
+You are an SQL debugger for a ClickHouse database.
 
-Check the given SQL generated for the given user question for logical and syntax errors. \
-Make sure it is a SELECT statement, not INSERT, DELETE, UPDATE etc \
-Use the {schema} and the {data_dictionary} to check for these errors. \
+Check the given SQL generated for the given user question for:
 
-Do not pick errors over efficiency or be nitpicky. \
-Only give error when it will definitely cause the query to fail or given incorrect results.\
+1. Syntax errors.
+2. Invalid ClickHouse functions.
+3. Functions belonging to other SQL dialects.
+4. Invalid column or table names.
+5. Logical errors that would produce incorrect results.
+6. Incorrect date/time functions.
+7. Incorrect use of data types.
+8. SELECT statement violations.
 
-Response should be generated according to the provided structured output.\
+Use the provided schema and data dictionary.
+
+This database uses ClickHouse SQL.
+
+Important ClickHouse rules:
+- today() is the function for today's date.
+- now() is the function for the current date and time.
+- CURDATE() is invalid.
+- CURRENT_DATE is invalid.
+- CURRENT_DATE() is invalid.
+- GETDATE() is invalid.
+
+If the SQL contains CURRENT_DATE, CURDATE(), GETDATE(), or another
+non-ClickHouse date function, mark the SQL as invalid.
+
+Do not pick errors over efficiency or be nitpicky.
+Only report an error when it will definitely cause the query to fail
+or produce incorrect results.
+
+Response should be generated according to the provided structured output.
 """
 
 #SQL generation on error
